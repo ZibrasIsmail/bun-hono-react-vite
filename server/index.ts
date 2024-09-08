@@ -5,4 +5,4 @@ const server = Bun.serve({
   port: 3000,
 });
 
-console.log(`Server is running on ${server.hostname}:${server.port}`);
+console.log(`Server is running on port ${server.port}`);
