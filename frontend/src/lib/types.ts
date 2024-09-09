@@ -1,13 +1,20 @@
 export interface Expense {
   id: number;
   name: string;
-  amount: number;
+  amount: string;
   category: string;
-  date: string;
+  userId: string;
 }
 
 export interface Filter {
   category: string;
   sortBy: "date" | "amount";
   sortOrder: "asc" | "desc";
+}
+
+export interface User {
+  id: string;
+  email: string;
+  name: string;
+  avatar: string;
 }

@@ -1,11 +1,20 @@
-import { useState } from "react";
-import { MenuIcon, XIcon } from "lucide-react";
 import { MainSection } from "@/components/sections/main-section";
 import { Nav } from "@/components/sections/nav";
 import { SideNav } from "@/components/sections/side-nav";
+import { Toaster } from "@/components/ui/toaster";
+import { useAuth } from "@/lib/auth";
+import { MenuIcon, XIcon } from "lucide-react";
+import { useState } from "react";
 
 export function AppLayout() {
   const [isSideNavOpen, setIsSideNavOpen] = useState(false);
+  const { isAuthenticated, isLoading } = useAuth();
+
+  if (isLoading) return <div>Loading...</div>;
+
+  if (!isAuthenticated) {
+    window.location.href = "/api/login";
+  }
 
   return (
     <div className="flex h-screen w-full flex-col font-body">
@@ -32,6 +41,7 @@ export function AppLayout() {
           <MainSection />
         </div>
       </div>
+      <Toaster />
     </div>
   );
 }

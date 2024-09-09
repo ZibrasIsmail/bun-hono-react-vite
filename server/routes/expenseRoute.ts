@@ -1,78 +1,99 @@
 import { zValidator } from "@hono/zod-validator";
 import { Hono } from "hono";
 import { z } from "zod";
+import { getUser } from "../kinde";
+import { db } from "../db";
+import { expenses as expenseTable } from "../db/schema/expense";
+import { desc, eq, sum } from "drizzle-orm";
 
 const expenseSchema = z.object({
   id: z.number().int().positive(),
   title: z.string().min(1).max(255),
-  amount: z.number().int().positive(),
+  amount: z.string(),
+  category: z.string().min(1).max(255),
 });
 
 type Expense = z.infer<typeof expenseSchema>;
 
-const fakeExpenses: Expense[] = [
-  { id: 1, title: "Expense 1", amount: 100 },
-  { id: 2, title: "Expense 2", amount: 200 },
-  { id: 3, title: "Expense 3", amount: 300 },
-];
-
 const createExpenseSchema = expenseSchema.omit({ id: true });
 
 export const expenseRoute = new Hono()
-  .get("/", async (c) => {
-    return c.json({ expenses: fakeExpenses });
+  .get("/", getUser, async (c) => {
+    const user = c.get("user");
+    const expenses = await db
+      .select()
+      .from(expenseTable)
+      .where(eq(expenseTable.userId, user.id));
+    return c.json({ expenses });
   })
   .get(
     "/:id{[0-9]+}",
+    getUser,
     zValidator("param", z.object({ id: z.coerce.number().int().positive() })),
     async (c) => {
       const id = c.req.valid("param").id;
-      const expense = fakeExpenses.find((expense) => expense.id === id);
+      const expense = await db
+        .select()
+        .from(expenseTable)
+        .where(eq(expenseTable.id, id))
+        .limit(1);
       if (!expense) {
         return c.notFound();
       }
       return c.json({ expense });
     }
   )
-  .get("/total-spent", async (c) => {
-    const totalSpent = fakeExpenses.reduce(
-      (acc, expense) => acc + expense.amount,
-      0
-    );
-    return c.json({ totalSpent });
+  .get("/total-spent", getUser, async (c) => {
+    const user = c.get("user");
+    const totalSpent = await db
+      .select({
+        total: sum(expenseTable.amount).as("total"),
+      })
+      .from(expenseTable)
+      .where(eq(expenseTable.userId, user.id));
+    return c.json({ totalSpent: totalSpent[0].total });
   })
-  .post("/", zValidator("json", createExpenseSchema), async (c) => {
+  .post("/", getUser, zValidator("json", createExpenseSchema), async (c) => {
+    const user = c.get("user");
     const expense = await c.req.valid("json");
-    fakeExpenses.push({ ...expense, id: fakeExpenses.length + 1 });
-    return c.json({ expenses: fakeExpenses });
+    const newExpense = await db
+      .insert(expenseTable)
+      .values({
+        ...expense,
+        userId: user.id,
+        amount: expense.amount.toString(),
+      })
+      .returning();
+    return c.json({ expense: newExpense[0] });
   })
-  .delete(
-    "/:id{[0-9]+}",
-    zValidator("param", z.object({ id: z.coerce.number().int().positive() })),
-    async (c) => {
-      const id = c.req.valid("param").id;
-      if (id < 1 || id > fakeExpenses.length) {
-        return c.notFound();
-      }
-      const updatedExpenses = fakeExpenses.filter(
-        (expense) => expense.id !== Number(id)
-      );
-      return c.json({ expenses: updatedExpenses });
+  .delete("/:id{[0-9]+}", getUser, async (c) => {
+    const id = Number(c.req.param("id"));
+    const expense = await db
+      .select()
+      .from(expenseTable)
+      .where(eq(expenseTable.id, id));
+    if (!expense) {
+      return c.notFound();
     }
-  )
+    await db.delete(expenseTable).where(eq(expenseTable.id, id));
+    return c.json({ expense });
+  })
   .put(
     "/:id{[0-9]+}",
     zValidator("param", z.object({ id: z.coerce.number().int().positive() })),
     zValidator("json", createExpenseSchema),
+    getUser,
     async (c) => {
       const id = c.req.valid("param").id;
-      if (id < 1 || id > fakeExpenses.length) {
-        return c.notFound();
-      }
       const expense = c.req.valid("json");
-      const updatedExpenses = fakeExpenses.map((expense) =>
-        expense.id === Number(id) ? expense : expense
-      );
-      return c.json({ expenses: updatedExpenses });
+      const updatedExpense = await db
+        .update(expenseTable)
+        .set({
+          ...expense,
+          amount: expense.amount.toString(),
+        })
+        .where(eq(expenseTable.id, id))
+        .returning();
+      return c.json({ expense: updatedExpense[0] });
     }
   );
